@@ -4,6 +4,8 @@ from google import genai
 from google.genai import types
 from dotenv import load_dotenv
 
+from prompts import system_prompt
+from call_function import available_functions, call_function
 
 def main():
     load_dotenv()
@@ -39,12 +41,29 @@ def generate_content(client, messages, verbose):
     response = client.models.generate_content(
         model="gemini-2.0-flash-001",
         contents=messages,
+        config=types.GenerateContentConfig(
+            tools=[available_functions], system_instruction=system_prompt
+        )
     )
     if verbose:
         print("Prompt tokens:", response.usage_metadata.prompt_token_count)
         print("Response tokens:", response.usage_metadata.candidates_token_count)
-    print("Response:")
-    print(response.text)
+    
+    if response.function_calls:
+        for function_call_part in response.function_calls:
+            # ✅ Use call_function() instead of just printing
+            function_call_result = call_function(function_call_part, verbose)
+
+            # Check the structure of the returned result
+            if not function_call_result.parts or not hasattr(function_call_result.parts[0], "function_response"):
+                raise RuntimeError("Invalid function response structure")
+
+            # ✅ Print result if verbose
+            if verbose:
+                print(f"-> {function_call_result.parts[0].function_response.response}")
+
+    else:
+        print(response.text)
 
 
 if __name__ == "__main__":
