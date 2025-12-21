@@ -38,32 +38,42 @@ def main():
 
 
 def generate_content(client, messages, verbose):
-    response = client.models.generate_content(
-        model="gemini-2.0-flash-001",
-        contents=messages,
-        config=types.GenerateContentConfig(
-            tools=[available_functions], system_instruction=system_prompt
+    MAX_STEPS = 4
+
+    for step in range(MAX_STEPS):
+        if verbose:
+            print(f"\n=== LLM STEP {step+1} ===")
+
+        response = client.models.generate_content(
+            model="gemini-2.0-flash-001",
+            contents=messages,
+            config=types.GenerateContentConfig(
+                tools=[available_functions],
+                system_instruction=system_prompt,
+            )
         )
-    )
-    if verbose:
-        print("Prompt tokens:", response.usage_metadata.prompt_token_count)
-        print("Response tokens:", response.usage_metadata.candidates_token_count)
-    
-    if response.function_calls:
-        for function_call_part in response.function_calls:
-            # ✅ Use call_function() instead of just printing
-            function_call_result = call_function(function_call_part, verbose)
 
-            # Check the structure of the returned result
-            if not function_call_result.parts or not hasattr(function_call_result.parts[0], "function_response"):
-                raise RuntimeError("Invalid function response structure")
+        for cand in response.candidates:
+            if cand.content:
+                messages.append(cand.content)
 
-            # ✅ Print result if verbose
+        if response.text and not response.function_calls:
+            print("\nFinal response:\n" + response.text)
+            return
+
+        if not response.function_calls:
+            print("Model returned no text and no function calls. Stopping.")
+            return
+
+        for fc in response.function_calls:
             if verbose:
-                print(f"-> {function_call_result.parts[0].function_response.response}")
+                print(f" - Calling function: {fc.name}({fc.args})")
+            tool_message = call_function(fc, verbose=verbose)
 
-    else:
-        print(response.text)
+            messages.append(tool_message)
+
+    print("Reached max iteration limit (20). Stopping.")
+
 
 
 if __name__ == "__main__":

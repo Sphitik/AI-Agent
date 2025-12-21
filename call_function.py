@@ -4,6 +4,7 @@ from functions.get_file_content import schema_get_file_content, get_file_content
 from functions.run_python_file import schema_run_python_file, run_python_file
 from functions.write_file_content import schema_write_file_content, write_file_content
 from config import MAX_READ_CHARS 
+import json
 
 
 available_functions = types.Tool(
@@ -22,38 +23,46 @@ FUNCTION_MAP = {
     "write_file_content": write_file_content,
 }
 
+def safe_json(value):
+    """Ensure the function result is JSON-serializable."""
+    try:
+        json.dumps(value)
+        return value
+    except Exception:
+        return str(value)
+
+
 def call_function(function_call_part, verbose=False):
-    
-    WORKING_DIRECTORY="./calculator"
-    function_name = function_call_part.name
-    kwargs = dict(function_call_part.args)
+    name = function_call_part.name
+    args = function_call_part.args.to_dict() if function_call_part.args else {}
 
-    # Optional logging
-    if verbose:
-        print(f"Calling function: {function_name}({kwargs})")
-    else:
-        print(f" - Calling function: {function_name}")
-    
+    # Force working directory
+    args["working_directory"] = "./calculator"
 
-    if function_name not in FUNCTION_MAP:
+    if name not in FUNCTION_MAP:
         return types.Content(
             role="tool",
             parts=[
                 types.Part.from_function_response(
-                    name=function_name,
-                    response={"error": f"Unknown function: {function_name}"}
+                    name=name,
+                    response={"error": f"Unknown function: {name}"},
                 )
-            ]
+            ],
         )
 
-    kwargs["working_directory"] = WORKING_DIRECTORY
-    function_result = FUNCTION_MAP[function_name](**kwargs)
+    try:
+        result = FUNCTION_MAP[name](**args)
+    except Exception as e:
+        result = f"Error calling function: {e}"
+
+    result = safe_json(result)
+
     return types.Content(
         role="tool",
         parts=[
             types.Part.from_function_response(
-                name=function_name,
-                response={"result": function_result},
+                name=name,
+                response={"result": result},
             )
         ],
     )
